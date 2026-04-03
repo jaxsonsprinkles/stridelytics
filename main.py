@@ -12,41 +12,7 @@ CONNECTIONS = [(0, 1), (1, 2), (2, 3), (3, 7), (0, 4), (4, 5),
                (18, 20), (11, 23), (12, 24), (23, 24), (23, 25),
                (24, 26), (25, 27), (26, 28), (27, 29), (28, 30),
                (29, 31), (30, 32), (27, 31), (28, 32)]
-POINT_LANDMARKS = [
-    "nose",
-    "left_eye_inner",
-    "left_eye",
-    "left_eye_outer",
-    "right_eye_inner",
-    "right_eye",
-    "right_eye_outer",
-    "left_ear",
-    "right_ear",
-    "mouth_left",
-    "mouth_right",
-    "left_shoulder",
-    "right_shoulder",
-    "left_elbow",
-    "right_elbow",
-    "left_wrist",
-    "right_wrist",
-    "left_pinky",
-    "right_pinky",
-    "left_index",
-    "right_index",
-    "left_thumb",
-    "right_thumb",
-    "left_hip",
-    "right_hip",
-    "left_knee",
-    "right_knee",
-    "left_ankle",
-    "right_ankle",
-    "left_heel",
-    "right_heel",
-    "left_foot_index",
-    "right_foot_index",
-]
+
 visible_side = None
 
 BaseOptions = mp.tasks.BaseOptions
@@ -69,13 +35,14 @@ if not fps or fps <= 0:
 frame_index = 0
 SCREEN_WIDTH, SCREEN_HEIGHT = get_monitors()[0].width, get_monitors()[0].height
 target_w, target_h = SCREEN_WIDTH//2, SCREEN_HEIGHT//2
-cv2.namedWindow('Stridelytics', cv2.WINDOW_NORMAL)
+cv2.namedWindow('Stridelytics', cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
 cv2.resizeWindow('Stridelytics', target_w, target_h)
 cv2.moveWindow('Stridelytics', (SCREEN_WIDTH-target_w) //
                2, (SCREEN_HEIGHT-target_h)//2)
 if not cap.isOpened():
     print("Error: could not open video")
     exit()
+
 
 def angle_between(a, b, c):
     # Angle between triangle ABC where A, B, and C are indexes of points on the body
@@ -85,29 +52,40 @@ def angle_between(a, b, c):
     return math.acos((ab**2+bc**2-ca**2)/(2*ab*bc))*(180/math.pi)
 
 
+def get_visible_side(points):
+    left_sum = sum(points[i][2] for i in [1, 2, 3, 7, 11,
+                   13, 15, 17, 19, 21, 23, 25, 27, 29, 31])
+    right_sum = sum(points[i][2] for i in [4, 5, 6, 8, 10,
+                    12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32])
+    return "left" if left_sum <= right_sum else "right"
+
 
 def draw_lines(result, frame):
     global visible_side
 
-    points = {}
+    points = []
     height, width = frame.shape[:2]
 
     if len(result.pose_landmarks) > 0:
-        
+
         for i, lm in enumerate(result.pose_landmarks[0]):
-            
-            x, y = int(lm.x*width), int(lm.y*height)
-            points[POINT_LANDMARKS[i]] = (x,y)
+
+            x, y, z = int(lm.x*width), int(lm.y*height), lm.z
+            points.append((x, y, z))
             cv2.circle(frame, (x, y), 5, (255, 255, 255))
-            cv2.putText(frame, str(i), (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-            
+            cv2.putText(frame, str(i), (x, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
         for (start, end) in CONNECTIONS:
             if start < len(points) and end < len(points):
-                cv2.line(frame, points.keys()[start],
-                        points.keys()[end], (255, 255, 255), 2)
+                cv2.line(frame, points[start][:2],
+                         points[end][:2], (255, 255, 255), 2)
+
         if visible_side is None:
-            visible_side = min(points["left_hip"].z, points["right_hip"].z)
-        cv2.putText(frame, str(visible_side), (100,100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+            visible_side = get_visible_side(points)
+
+        cv2.putText(frame, visible_side, (100, 100),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
 
 while True:
