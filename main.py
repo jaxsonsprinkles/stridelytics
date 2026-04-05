@@ -1,9 +1,11 @@
+import json
+
 import cv2
 from screeninfo import get_monitors
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-import math
+import csv as c
 
 CONNECTIONS = [(0, 1), (1, 2), (2, 3), (3, 7), (0, 4), (4, 5),
                (5, 6), (6, 8), (9, 10), (11, 12), (11, 13),
@@ -12,8 +14,45 @@ CONNECTIONS = [(0, 1), (1, 2), (2, 3), (3, 7), (0, 4), (4, 5),
                (18, 20), (11, 23), (12, 24), (23, 24), (23, 25),
                (24, 26), (25, 27), (26, 28), (27, 29), (28, 30),
                (29, 31), (30, 32), (27, 31), (28, 32)]
+CSV_KEYS = [
+    "nose",
+    "left_eye_inner",
+    "left_eye",
+    "left_eye_outer",
+    "right_eye_inner",
+    "right_eye",
+    "right_eye_outer",
+    "left_ear",
+    "right_ear",
+    "mouth_left",
+    "mouth_right",
+    "left_shoulder",
+    "right_shoulder",
+    "left_elbow",
+    "right_elbow",
+    "left_wrist",
+    "right_wrist",
+    "left_pinky",
+    "right_pinky",
+    "left_index",
+    "right_index",
+    "left_thumb",
+    "right_thumb",
+    "left_hip",
+    "right_hip",
+    "left_knee",
+    "right_knee",
+    "left_ankle",
+    "right_ankle",
+    "left_heel",
+    "right_heel",
+    "left_foot_index",
+    "right_foot_index",
+]
+
 
 visible_side = None
+points = []
 
 BaseOptions = mp.tasks.BaseOptions
 PoseLandmarker = mp.tasks.vision.PoseLandmarker
@@ -27,14 +66,29 @@ options = PoseLandmarkerOptions(
 
 landmarker = PoseLandmarker.create_from_options(options)
 
+csv = []
 
-cap = cv2.VideoCapture('input/input.mp4')
+cap = cv2.VideoCapture('input/input2.mp4')
 fps = cap.get(cv2.CAP_PROP_FPS)
 if not fps or fps <= 0:
     fps = 30.0
 frame_index = 0
 SCREEN_WIDTH, SCREEN_HEIGHT = get_monitors()[0].width, get_monitors()[0].height
-target_w, target_h = SCREEN_WIDTH//2, SCREEN_HEIGHT//2
+video_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+video_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+if video_w > 0 and video_h > 0:
+    target_w = max(1, int(video_w * 0.5))
+    target_h = max(1, int(video_h * 0.5))
+else:
+    target_w, target_h = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+
+
+if target_w > SCREEN_WIDTH or target_h > SCREEN_HEIGHT:
+    fit_scale = min(SCREEN_WIDTH / target_w, SCREEN_HEIGHT / target_h)
+    target_w = max(1, int(target_w * fit_scale))
+    target_h = max(1, int(target_h * fit_scale))
+
 cv2.namedWindow('Stridelytics', cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
 cv2.resizeWindow('Stridelytics', target_w, target_h)
 cv2.moveWindow('Stridelytics', (SCREEN_WIDTH-target_w) //
@@ -42,14 +96,6 @@ cv2.moveWindow('Stridelytics', (SCREEN_WIDTH-target_w) //
 if not cap.isOpened():
     print("Error: could not open video")
     exit()
-
-
-def angle_between(a, b, c):
-    # Angle between triangle ABC where A, B, and C are indexes of points on the body
-    ab = math.dist(a, b)
-    bc = math.dist(b, c)
-    ca = math.dist(c, a)
-    return math.acos((ab**2+bc**2-ca**2)/(2*ab*bc))*(180/math.pi)
 
 
 def get_visible_side(points):
@@ -62,8 +108,7 @@ def get_visible_side(points):
 
 def draw_lines(result, frame):
     global visible_side
-
-    points = []
+    global points
     height, width = frame.shape[:2]
 
     if len(result.pose_landmarks) > 0:
@@ -89,7 +134,7 @@ def draw_lines(result, frame):
 
 
 while True:
-
+    points = []
     ret, frame = cap.read()
 
     if ret:
@@ -101,8 +146,23 @@ while True:
         frame_index += 1
         cv2.imshow('Stridelytics', frame)
     else:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        continue
+        # Transpose: convert from list-of-frames to dict-of-landmarks
+        output = {key: [] for key in CSV_KEYS}
+        for frame in csv:
+            for i, landmark_name in enumerate(CSV_KEYS):
+                output[landmark_name].append(frame[i])
+
+        print(output)
+        with open('output/output.csv', 'w', newline='', encoding='utf-8') as f:
+            writer = c.DictWriter(f, ["landmark", "points"])
+            writer.writeheader()
+            for landmark_name, points_list in output.items():
+                writer.writerow(
+                    {"landmark": landmark_name, "points": json.dumps(points_list)})
+        break
+
+    if frame_index % 10 == 0:
+        csv.append(points)
 
     if cv2.waitKey(25) & 0xFF == ord('q'):
         break
